@@ -1,0 +1,654 @@
+import React, { useState, useEffect, useRef } from 'react';
+import { Play, RotateCcw, Trophy, Star, Zap, Heart, ArrowLeft, RefreshCw } from 'lucide-react';
+
+const SimpleGameApp = () => {
+  const [currentGame, setCurrentGame] = useState(null);
+  const [scores, setScores] = useState({
+    memory: 0,
+    reaction: 0,
+    tap: 0,
+    color: 0
+  });
+  const [currentScores, setCurrentScores] = useState({
+    memory: 0,
+    reaction: 0,
+    tap: 0,
+    color: 0
+  });
+
+  const audioContextRef = useRef(null);
+
+  // 소리 재생 함수
+  const playSound = (frequency, duration = 200) => {
+    try {
+      if (!audioContextRef.current) {
+        audioContextRef.current = new (window.AudioContext || window.webkitAudioContext)();
+      }
+      
+      const oscillator = audioContextRef.current.createOscillator();
+      const gainNode = audioContextRef.current.createGain();
+      
+      oscillator.connect(gainNode);
+      gainNode.connect(audioContextRef.current.destination);
+      
+      oscillator.frequency.value = frequency;
+      oscillator.type = 'sine';
+      
+      gainNode.gain.setValueAtTime(0.1, audioContextRef.current.currentTime);
+      gainNode.gain.exponentialRampToValueAtTime(0.01, audioContextRef.current.currentTime + duration / 1000);
+      
+      oscillator.start();
+      oscillator.stop(audioContextRef.current.currentTime + duration / 1000);
+    } catch (error) {
+      console.log('Audio not supported');
+    }
+  };
+
+  const resetScores = () => {
+    setScores({
+      memory: 0,
+      reaction: 0,
+      tap: 0,
+      color: 0
+    });
+    setCurrentScores({
+      memory: 0,
+      reaction: 0,
+      tap: 0,
+      color: 0
+    });
+  };
+
+  const games = [
+    {
+      id: 'memory',
+      name: '기억력 게임',
+      description: '순서대로 나타나는 색깔을 기억하세요!',
+      icon: '🧠',
+      color: 'bg-blue-500'
+    },
+    {
+      id: 'reaction',
+      name: '반응속도 게임',
+      description: '초록색이 나타나면 빠르게 클릭하세요!',
+      icon: '⚡',
+      color: 'bg-green-500'
+    },
+    {
+      id: 'tap',
+      name: '탭 게임',
+      description: '10초 안에 최대한 많이 탭하세요!',
+      icon: '👆',
+      color: 'bg-purple-500'
+    },
+    {
+      id: 'color',
+      name: '색깔 맞추기',
+      description: '글자와 색깔이 같은지 판단하세요!',
+      icon: '🎨',
+      color: 'bg-orange-500'
+    }
+  ];
+
+  const GameSelector = () => (
+    <div className="max-w-2xl mx-auto p-6">
+      <div className="text-center mb-8">
+        <h1 className="text-4xl font-bold mb-2 bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
+          미니게임 체험
+        </h1>
+        <p className="text-gray-600">간단하고 재미있는 게임을 체험해보세요!</p>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+        {games.map(game => (
+          <div
+            key={game.id}
+            onClick={() => setCurrentGame(game.id)}
+            className={`${game.color} p-6 rounded-xl text-white cursor-pointer transform hover:scale-105 transition-all duration-200 shadow-lg hover:shadow-xl`}
+          >
+            <div className="text-4xl mb-3">{game.icon}</div>
+            <h3 className="text-xl font-bold mb-2">{game.name}</h3>
+            <p className="text-white/90 text-sm mb-3">{game.description}</p>
+            <div className="flex items-center justify-between">
+              <div className="text-sm opacity-75">
+                <div>최고: {scores[game.id]}</div>
+                <div>현재: {currentScores[game.id]}</div>
+              </div>
+              <Play className="w-5 h-5" />
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div className="bg-gradient-to-r from-yellow-400 to-orange-500 p-4 rounded-xl text-white text-center mb-4">
+        <Trophy className="w-8 h-8 mx-auto mb-2" />
+        <h3 className="font-bold mb-1">총 점수: {Object.values(scores).reduce((a, b) => a + b, 0)}</h3>
+        <p className="text-sm opacity-90">모든 게임을 플레이해서 점수를 모아보세요!</p>
+      </div>
+
+      <div className="text-center">
+        <button
+          onClick={resetScores}
+          className="bg-red-500 text-white px-6 py-3 rounded-lg hover:bg-red-600 transition-colors flex items-center gap-2 mx-auto"
+        >
+          <RefreshCw className="w-5 h-5" />
+          점수 초기화
+        </button>
+      </div>
+    </div>
+  );
+
+  const MemoryGame = () => {
+    const [sequence, setSequence] = useState([]);
+    const [userSequence, setUserSequence] = useState([]);
+    const [isPlaying, setIsPlaying] = useState(false);
+    const [isShowing, setIsShowing] = useState(false);
+    const [activeColor, setActiveColor] = useState(null);
+    const [level, setLevel] = useState(1);
+    const [gameOver, setGameOver] = useState(false);
+
+    const colors = ['red', 'blue', 'green', 'yellow'];
+    const colorClasses = {
+      red: 'bg-red-500',
+      blue: 'bg-blue-500',
+      green: 'bg-green-500',
+      yellow: 'bg-yellow-500'
+    };
+
+    const colorFrequencies = {
+      red: 440,
+      blue: 523,
+      green: 659,
+      yellow: 784
+    };
+
+    const startGame = () => {
+      const newSequence = [colors[Math.floor(Math.random() * colors.length)]];
+      setSequence(newSequence);
+      setUserSequence([]);
+      setLevel(1);
+      setGameOver(false);
+      setIsPlaying(true);
+      setCurrentScores(prev => ({ ...prev, memory: 1 }));
+      showSequence(newSequence);
+    };
+
+    const showSequence = (seq) => {
+      setIsShowing(true);
+      seq.forEach((color, index) => {
+        setTimeout(() => {
+          setActiveColor(color);
+          playSound(colorFrequencies[color], 300);
+          setTimeout(() => setActiveColor(null), 500);
+        }, index * 700);
+      });
+      setTimeout(() => setIsShowing(false), seq.length * 700);
+    };
+
+    const handleColorClick = (color) => {
+      if (isShowing || gameOver) return;
+      
+      playSound(colorFrequencies[color], 200);
+      const newUserSequence = [...userSequence, color];
+      setUserSequence(newUserSequence);
+
+      if (newUserSequence[newUserSequence.length - 1] !== sequence[newUserSequence.length - 1]) {
+        setGameOver(true);
+        setIsPlaying(false);
+        if (level > scores.memory) {
+          setScores(prev => ({ ...prev, memory: level }));
+        }
+        return;
+      }
+
+      if (newUserSequence.length === sequence.length) {
+        const nextLevel = level + 1;
+        setLevel(nextLevel);
+        setCurrentScores(prev => ({ ...prev, memory: nextLevel }));
+        const newSequence = [...sequence, colors[Math.floor(Math.random() * colors.length)]];
+        setSequence(newSequence);
+        setUserSequence([]);
+        setTimeout(() => showSequence(newSequence), 1000);
+      }
+    };
+
+    return (
+      <div className="text-center">
+        <h2 className="text-2xl font-bold mb-4">기억력 게임</h2>
+        <div className="mb-4">
+          <div className="text-lg mb-2">
+            현재 레벨: {level} | 최고 레벨: {scores.memory}
+          </div>
+          {!isPlaying && !gameOver && (
+            <button
+              onClick={startGame}
+              className="bg-blue-500 text-white px-6 py-3 rounded-lg hover:bg-blue-600 transition-colors"
+            >
+              게임 시작
+            </button>
+          )}
+          {gameOver && (
+            <div className="mb-4">
+              <div className="text-red-600 font-bold mb-2">게임 오버!</div>
+              <div className="text-lg mb-2">최종 레벨: {level}</div>
+              <button
+                onClick={startGame}
+                className="bg-blue-500 text-white px-6 py-3 rounded-lg hover:bg-blue-600 transition-colors"
+              >
+                다시 시작
+              </button>
+            </div>
+          )}
+        </div>
+
+        <div className="grid grid-cols-2 gap-4 max-w-md mx-auto">
+          {colors.map(color => (
+            <button
+              key={color}
+              onClick={() => handleColorClick(color)}
+              className={`${colorClasses[color]} h-24 rounded-lg transition-all duration-200 ${
+                activeColor === color ? 'scale-110 brightness-150' : ''
+              } ${isShowing ? 'cursor-not-allowed' : 'hover:brightness-110'}`}
+              disabled={isShowing || gameOver}
+            />
+          ))}
+        </div>
+
+        {isShowing && (
+          <div className="mt-4 text-blue-600 font-semibold">
+            순서를 기억하세요...
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  const ReactionGame = () => {
+    const [isWaiting, setIsWaiting] = useState(false);
+    const [isReady, setIsReady] = useState(false);
+    const [reactionTime, setReactionTime] = useState(null);
+    const [gameStarted, setGameStarted] = useState(false);
+    const [tooEarly, setTooEarly] = useState(false);
+    const [startTime, setStartTime] = useState(null);
+
+    const startReactionTest = () => {
+      setGameStarted(true);
+      setIsWaiting(true);
+      setIsReady(false);
+      setReactionTime(null);
+      setTooEarly(false);
+      
+      const delay = Math.random() * 3000 + 2000;
+      setTimeout(() => {
+        setIsWaiting(false);
+        setIsReady(true);
+        setStartTime(performance.now());
+      }, delay);
+    };
+
+    const handleClick = () => {
+      if (isWaiting && !isReady) {
+        setTooEarly(true);
+        setGameStarted(false);
+        setIsWaiting(false);
+        return;
+      }
+
+      if (isReady) {
+        const time = Math.round((performance.now() - startTime) * 100) / 100;
+        setReactionTime(time);
+        setIsReady(false);
+        setGameStarted(false);
+        setCurrentScores(prev => ({ ...prev, reaction: time }));
+        
+        const score = Math.max(0, Math.round(1000 - time));
+        if (score > scores.reaction) {
+          setScores(prev => ({ ...prev, reaction: score }));
+        }
+      }
+    };
+
+    const getSpeedRating = (time) => {
+      if (time < 200) return '매우 빠름! 🚀';
+      if (time < 300) return '빠름! ⚡';
+      if (time < 400) return '보통 👍';
+      if (time < 500) return '느림 🐌';
+      return '매우 느림 🐢';
+    };
+
+    return (
+      <div className="text-center">
+        <h2 className="text-2xl font-bold mb-4">반응속도 게임</h2>
+        
+        <div className="mb-4">
+          <div className="text-lg mb-2">
+            현재: {reactionTime ? `${reactionTime.toFixed(2)}ms` : '---'} | 
+            최고: {scores.reaction > 0 ? `${(1000 - scores.reaction).toFixed(2)}ms` : '---'}
+          </div>
+        </div>
+        
+        <div className="mb-6">
+          <div className="text-lg mb-2">빨간색에서 초록색으로 바뀌면 클릭!</div>
+          
+          <div
+            onClick={handleClick}
+            className={`w-64 h-64 mx-auto rounded-lg cursor-pointer transition-all duration-200 flex items-center justify-center text-white font-bold text-xl ${
+              isWaiting
+                ? 'bg-red-500'
+                : isReady
+                ? 'bg-green-500'
+                : 'bg-gray-300'
+            }`}
+          >
+            {!gameStarted && !reactionTime && !tooEarly && '시작하려면 클릭'}
+            {isWaiting && '잠깐...'}
+            {isReady && '지금!'}
+            {tooEarly && '너무 빨라요!'}
+            {reactionTime && `${reactionTime.toFixed(2)}ms`}
+          </div>
+        </div>
+
+        {!gameStarted && !reactionTime && !tooEarly && (
+          <button
+            onClick={startReactionTest}
+            className="bg-green-500 text-white px-6 py-3 rounded-lg hover:bg-green-600 transition-colors"
+          >
+            게임 시작
+          </button>
+        )}
+
+        {(reactionTime || tooEarly) && (
+          <div className="mt-4">
+            {reactionTime && (
+              <div className="mb-2">
+                <div className="text-lg font-bold">반응시간: {reactionTime.toFixed(2)}ms</div>
+                <div className="text-sm text-gray-600">
+                  {getSpeedRating(reactionTime)}
+                </div>
+              </div>
+            )}
+            <button
+              onClick={startReactionTest}
+              className="bg-green-500 text-white px-6 py-3 rounded-lg hover:bg-green-600 transition-colors"
+            >
+              다시 시도
+            </button>
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  const TapGame = () => {
+    const [tapCount, setTapCount] = useState(0);
+    const [timeLeft, setTimeLeft] = useState(10.00);
+    const [isPlaying, setIsPlaying] = useState(false);
+    const [gameOver, setGameOver] = useState(false);
+    const [isPaused, setIsPaused] = useState(false);
+    const timerRef = useRef(null);
+
+    useEffect(() => {
+      if (isPlaying && timeLeft > 0 && !isPaused) {
+        timerRef.current = setInterval(() => {
+          setTimeLeft(prev => {
+            const newTime = prev - 0.01;
+            return newTime <= 0 ? 0 : newTime;
+          });
+        }, 10);
+      } else if (timeLeft <= 0 && isPlaying) {
+        setIsPlaying(false);
+        setGameOver(true);
+        setCurrentScores(prev => ({ ...prev, tap: tapCount }));
+        if (tapCount > scores.tap) {
+          setScores(prev => ({ ...prev, tap: tapCount }));
+        }
+      }
+      return () => clearInterval(timerRef.current);
+    }, [isPlaying, timeLeft, isPaused, tapCount, scores.tap]);
+
+    const startGame = () => {
+      setTapCount(0);
+      setTimeLeft(10.00);
+      setIsPlaying(true);
+      setGameOver(false);
+      setIsPaused(false);
+    };
+
+    const handleTap = () => {
+      if (isPlaying && timeLeft > 0) {
+        setTapCount(prev => prev + 1);
+        setIsPaused(true);
+        setTimeout(() => setIsPaused(false), 50);
+      }
+    };
+
+    return (
+      <div className="text-center">
+        <h2 className="text-2xl font-bold mb-4">탭 게임</h2>
+        
+        <div className="mb-4">
+          <div className="text-lg mb-2">
+            현재: {tapCount}번 | 최고: {scores.tap}번
+          </div>
+        </div>
+        
+        <div className="mb-6">
+          <div className="text-3xl font-bold mb-2">
+            {isPlaying ? timeLeft.toFixed(2) : gameOver ? '완료!' : '준비'}
+          </div>
+          <div className="text-lg">탭 수: {tapCount}</div>
+        </div>
+
+        <div
+          onClick={handleTap}
+          className={`w-64 h-64 mx-auto rounded-lg cursor-pointer transition-all duration-100 flex items-center justify-center text-white font-bold text-2xl ${
+            isPlaying
+              ? 'bg-purple-500 hover:bg-purple-600 active:bg-purple-700 active:scale-95'
+              : 'bg-gray-300'
+          }`}
+        >
+          {isPlaying ? '탭!' : gameOver ? `${tapCount}번!` : '준비'}
+        </div>
+
+        <div className="mt-6">
+          {!isPlaying && !gameOver && (
+            <button
+              onClick={startGame}
+              className="bg-purple-500 text-white px-6 py-3 rounded-lg hover:bg-purple-600 transition-colors"
+            >
+              게임 시작
+            </button>
+          )}
+          {gameOver && (
+            <div>
+              <div className="text-lg mb-2">
+                최종 점수: {tapCount}번
+                <br />
+                <span className="text-sm text-gray-600">
+                  초당 {(tapCount / 10).toFixed(1)}번
+                </span>
+              </div>
+              <button
+                onClick={startGame}
+                className="bg-purple-500 text-white px-6 py-3 rounded-lg hover:bg-purple-600 transition-colors"
+              >
+                다시 시작
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  const ColorGame = () => {
+    const [currentWord, setCurrentWord] = useState(null);
+    const [score, setScore] = useState(0);
+    const [isPlaying, setIsPlaying] = useState(false);
+    const [timeLeft, setTimeLeft] = useState(10.00);
+    const [gameOver, setGameOver] = useState(false);
+    const [isPaused, setIsPaused] = useState(false);
+    const timerRef = useRef(null);
+
+    const colors = [
+      { name: '빨강', color: 'text-red-500' },
+      { name: '파랑', color: 'text-blue-500' },
+      { name: '초록', color: 'text-green-500' },
+      { name: '노랑', color: 'text-yellow-500' },
+      { name: '보라', color: 'text-purple-500' }
+    ];
+
+    const generateWord = () => {
+      const word = colors[Math.floor(Math.random() * colors.length)];
+      const displayColor = colors[Math.floor(Math.random() * colors.length)];
+      setCurrentWord({
+        text: word.name,
+        color: displayColor.color,
+        isMatch: word.name === displayColor.name
+      });
+    };
+
+    useEffect(() => {
+      if (isPlaying && timeLeft > 0 && !isPaused) {
+        timerRef.current = setInterval(() => {
+          setTimeLeft(prev => {
+            const newTime = prev - 0.01;
+            return newTime <= 0 ? 0 : newTime;
+          });
+        }, 10);
+      } else if (timeLeft <= 0 && isPlaying) {
+        setIsPlaying(false);
+        setGameOver(true);
+        setCurrentScores(prev => ({ ...prev, color: score }));
+        if (score > scores.color) {
+          setScores(prev => ({ ...prev, color: score }));
+        }
+      }
+      return () => clearInterval(timerRef.current);
+    }, [isPlaying, timeLeft, isPaused, score, scores.color]);
+
+    const startGame = () => {
+      setScore(0);
+      setTimeLeft(10.00);
+      setIsPlaying(true);
+      setGameOver(false);
+      setIsPaused(false);
+      generateWord();
+    };
+
+    const handleAnswer = (answer) => {
+      if (!isPlaying || !currentWord) return;
+
+      const isCorrect = (answer === 'match' && currentWord.isMatch) || 
+                       (answer === 'different' && !currentWord.isMatch);
+      
+      if (isCorrect) {
+        setScore(prev => prev + 1);
+      }
+      
+      setIsPaused(true);
+      setTimeout(() => {
+        setIsPaused(false);
+        generateWord();
+      }, 100);
+    };
+
+    return (
+      <div className="text-center">
+        <h2 className="text-2xl font-bold mb-4">색깔 맞추기</h2>
+        
+        <div className="mb-4">
+          <div className="text-lg mb-2">
+            현재: {score}점 | 최고: {scores.color}점
+          </div>
+        </div>
+        
+        <div className="mb-6">
+          <div className="text-lg mb-2">시간: {timeLeft.toFixed(2)}초</div>
+          <div className="text-lg">점수: {score}</div>
+        </div>
+
+        {isPlaying && currentWord && (
+          <div className="mb-6">
+            <div className="text-lg mb-2">글자와 색깔이 같나요?</div>
+            <div className={`text-6xl font-bold mb-4 ${currentWord.color}`}>
+              {currentWord.text}
+            </div>
+            <div className="flex gap-4 justify-center">
+              <button
+                onClick={() => handleAnswer('match')}
+                className="bg-green-500 text-white px-6 py-3 rounded-lg hover:bg-green-600 transition-colors"
+              >
+                같다
+              </button>
+              <button
+                onClick={() => handleAnswer('different')}
+                className="bg-red-500 text-white px-6 py-3 rounded-lg hover:bg-red-600 transition-colors"
+              >
+                다르다
+              </button>
+            </div>
+          </div>
+        )}
+
+        {!isPlaying && !gameOver && (
+          <button
+            onClick={startGame}
+            className="bg-orange-500 text-white px-6 py-3 rounded-lg hover:bg-orange-600 transition-colors"
+          >
+            게임 시작
+          </button>
+        )}
+
+        {gameOver && (
+          <div className="mt-4">
+            <div className="text-lg mb-2">최종 점수: {score}점</div>
+            <button
+              onClick={startGame}
+              className="bg-orange-500 text-white px-6 py-3 rounded-lg hover:bg-orange-600 transition-colors"
+            >
+              다시 시작
+            </button>
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  const renderGame = () => {
+    switch (currentGame) {
+      case 'memory':
+        return <MemoryGame />;
+      case 'reaction':
+        return <ReactionGame />;
+      case 'tap':
+        return <TapGame />;
+      case 'color':
+        return <ColorGame />;
+      default:
+        return <GameSelector />;
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-purple-50 p-4">
+      {currentGame && (
+        <div className="max-w-2xl mx-auto mb-4">
+          <button
+            onClick={() => setCurrentGame(null)}
+            className="flex items-center gap-2 text-gray-600 hover:text-gray-800 transition-colors"
+          >
+            <ArrowLeft className="w-5 h-5" />
+            게임 선택으로 돌아가기
+          </button>
+        </div>
+      )}
+      
+      <div className="max-w-2xl mx-auto">
+        {renderGame()}
+      </div>
+    </div>
+  );
+};
+
+export default SimpleGameApp;
